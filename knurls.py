@@ -5,7 +5,7 @@
 import adsk.core, adsk.fusion, adsk.cam, traceback
 from .flat_knurl import add_to_button as flat_knurl_button
 
-debug = True
+debug = False
 
 def run(context):
     ui = None
@@ -36,6 +36,7 @@ def run(context):
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 def stop(context):
+    ui = None
     try:
         app = adsk.core.Application.get()
         ui = app.userInterface
