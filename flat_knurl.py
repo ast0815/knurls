@@ -30,7 +30,7 @@ class FlatKnurlCommandCreatedEventHandler(adsk.core.CommandCreatedEventHandler):
             face.setSelectionLimits(1)
 
             # Shape of the knurls
-            inputs.addValueInput('depth', 'Depth', 'mm', adsk.core.ValueInput.createByString('1 mm'))
+            inputs.addValueInput('depth', 'Depth', 'mm', adsk.core.ValueInput.createByString('0.5 mm'))
             inputs.addValueInput('width', 'Width', 'mm', adsk.core.ValueInput.createByString('2 mm'))
             inputs.addValueInput('angle', 'Angle', 'deg', adsk.core.ValueInput.createByString('30 deg'))
 
@@ -64,14 +64,81 @@ class FlatKnurlCommandExecuteHandler(adsk.core.CommandEventHandler):
             angle = inputs.itemById('angle').value
             face = inputs.itemById('face').selection(0).entity
 
-            if debug:
-                ui.messageBox('%f'%(angle,))
-
             # Get extrude features
             product = app.activeProduct
             design = adsk.fusion.Design.cast(product)
             rootComp = design.rootComponent
             extrudes = rootComp.features.extrudeFeatures
+
+            # Add sketch
+            sketches = rootComp.sketches
+            sketch = sketches.add(face)
+
+            # Get minimum and maximum coordinates
+            bounds = sketch.profiles.item(0).boundingBox
+            x_min = bounds.minPoint.x
+            y_min = bounds.minPoint.y
+            x_max = bounds.maxPoint.x
+            y_max = bounds.maxPoint.y
+
+            # Calculate how to fill the area
+            Dx = x_max - x_min
+            Dy = y_max - y_min
+            Nx = (Dx / width)
+            Ny = (Dy / width)
+            dx = -width*(1.-(Nx % 1))/2. # Offsets to make things symmetrical
+            dy = -width*(1.-(Ny % 1))/2.
+            Nx = int(Nx) + 2
+            Ny = int(Ny) + 2
+
+            if debug:
+                ui.messageBox('%s %s %s'%(Dx, Nx, dx))
+
+            # Draw single knurl base outside face bounds, so there is no overlap of profiles
+            lines = sketch.sketchCurves.sketchLines;
+            rectangle = lines.addTwoPointRectangle(adsk.core.Point3D.create(x_min-width+dx, y_min-width+dy, 0), adsk.core.Point3D.create(x_min+dx, y_min+dy, 0))
+            # Find base of knurl within sketch profiles
+            # Should be the one with the lowest minimum coordinates
+            base = sketch.profiles.item(0)
+            for i in range(1, sketch.profiles.count):
+                alt_base = sketch.profiles.item(i)
+                if alt_base.boundingBox.minPoint.x < base.boundingBox.minPoint.x:
+                    base = alt_base
+
+            # Extrude knurl
+            extrusion_input = extrudes.createInput(base, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+            extrusion_distance = adsk.fusion.DistanceExtentDefinition.create(
+                    adsk.core.ValueInput.createByReal(depth),
+                    )
+            extrusion_input.setOneSideExtent(extrusion_distance,
+                    adsk.fusion.ExtentDirections.PositiveExtentDirection,
+                    adsk.core.ValueInput.createByReal(-3.14159/2. + angle),
+                    )
+            knurl = extrudes.add(extrusion_input).bodies.item(0) # Body created by extrude
+
+            # Create input entities for rectangular pattern
+            inputEntites = adsk.core.ObjectCollection.create()
+            inputEntites.add(knurl)
+
+            # Get x and y axes for rectangular pattern
+            xAxis = rectangle.item(0)
+            yAxis = rectangle.item(1)
+
+            # Quantity and distance
+            quantityOne = adsk.core.ValueInput.createByString("%d"%(Nx,))
+            distanceOne = adsk.core.ValueInput.createByReal(-width) # Axis is in "wrong" direction
+            quantityTwo = adsk.core.ValueInput.createByString("%d"%(Ny,))
+            distanceTwo = adsk.core.ValueInput.createByReal(width)
+
+            # Create the input for rectangular pattern
+            rectangularPatterns = rootComp.features.rectangularPatternFeatures
+            rectangularPatternInput = rectangularPatterns.createInput(inputEntites, xAxis, quantityOne, distanceOne, adsk.fusion.PatternDistanceType.SpacingPatternDistanceType)
+
+            # Set the data for second direction
+            rectangularPatternInput.setDirectionTwo(yAxis, quantityTwo, distanceTwo)
+
+            # Create the rectangular pattern
+            rectangularFeature = rectangularPatterns.add(rectangularPatternInput)
 
             # Create the envelope
             extrusion_input = extrudes.createInput(face, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
@@ -83,6 +150,13 @@ class FlatKnurlCommandExecuteHandler(adsk.core.CommandEventHandler):
                     adsk.core.ValueInput.createByReal(-3.14159/2. + angle),
                     )
             envelope = extrudes.add(extrusion_input)
+
+            # Get intersection of envelope and pattern
+            # TODO
+
+            # Union of intersection and original body
+            # TODO
+            face.body
 
         except:
             if ui:
