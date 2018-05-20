@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import adsk.core, adsk.fusion, adsk.cam, traceback
-debug = True
+debug = False
 handlers = []
 
 def add_to_button(button):
@@ -117,8 +117,8 @@ class FlatKnurlCommandExecuteHandler(adsk.core.CommandEventHandler):
             knurl = extrudes.add(extrusion_input).bodies.item(0) # Body created by extrude
 
             # Create input entities for rectangular pattern
-            inputEntites = adsk.core.ObjectCollection.create()
-            inputEntites.add(knurl)
+            input_entities = adsk.core.ObjectCollection.create()
+            input_entities.add(knurl)
 
             # Get x and y axes for rectangular pattern
             xAxis = rectangle.item(0)
@@ -132,13 +132,13 @@ class FlatKnurlCommandExecuteHandler(adsk.core.CommandEventHandler):
 
             # Create the input for rectangular pattern
             rectangularPatterns = rootComp.features.rectangularPatternFeatures
-            rectangularPatternInput = rectangularPatterns.createInput(inputEntites, xAxis, quantityOne, distanceOne, adsk.fusion.PatternDistanceType.SpacingPatternDistanceType)
+            rectangularPatternInput = rectangularPatterns.createInput(input_entities, xAxis, quantityOne, distanceOne, adsk.fusion.PatternDistanceType.SpacingPatternDistanceType)
 
             # Set the data for second direction
             rectangularPatternInput.setDirectionTwo(yAxis, quantityTwo, distanceTwo)
 
             # Create the rectangular pattern
-            rectangularFeature = rectangularPatterns.add(rectangularPatternInput)
+            rectangular_feature = rectangularPatterns.add(rectangularPatternInput)
 
             # Create the envelope
             extrusion_input = extrudes.createInput(face, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
@@ -151,12 +151,27 @@ class FlatKnurlCommandExecuteHandler(adsk.core.CommandEventHandler):
                     )
             envelope = extrudes.add(extrusion_input)
 
+            # Create input entities for combine
+            input_entities = adsk.core.ObjectCollection.create()
+            input_entities.add(knurl)
+            for i in range(rectangular_feature.bodies.count):
+                input_entities.add(rectangular_feature.bodies.item(i))
+
             # Get intersection of envelope and pattern
-            # TODO
+            combines = rootComp.features.combineFeatures
+            combine_input = combines.createInput(envelope.bodies.item(0), input_entities)
+            combine_input.operation = adsk.fusion.FeatureOperations.IntersectFeatureOperation
+            knurls = combines.add(combine_input)
+
+            # Create input entities for combine
+            input_entities = adsk.core.ObjectCollection.create()
+            for i in range(knurls.bodies.count):
+                input_entities.add(knurls.bodies.item(i))
 
             # Union of intersection and original body
-            # TODO
-            face.body
+            combine_input = combines.createInput(face.body, input_entities)
+            combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
+            final = combines.add(combine_input)
 
         except:
             if ui:
