@@ -27,6 +27,7 @@ class FlatKnurlCommandCreatedEventHandler(adsk.core.CommandCreatedEventHandler):
             # A flat face
             face = inputs.addSelectionInput('face', "Face", "Flat surface that will be knurled")
             face.addSelectionFilter('PlanarFaces')
+            face.addSelectionFilter('Profiles')
             face.setSelectionLimits(1)
 
             # Shape of the knurls
@@ -72,7 +73,13 @@ class FlatKnurlCommandExecuteHandler(adsk.core.CommandEventHandler):
 
             # Add sketch
             sketches = rootComp.sketches
-            sketch = sketches.add(face)
+            face_type = 'face'
+            try:
+                sketch = sketches.add(face)
+            except RuntimeError:
+                # We probably have a profile instead of a face
+                face_type = 'profile'
+                sketch = face.parentSketch
 
             # Get minimum and maximum coordinates
             bounds = sketch.profiles.item(0).boundingBox
@@ -169,9 +176,16 @@ class FlatKnurlCommandExecuteHandler(adsk.core.CommandEventHandler):
                 input_entities.add(knurls.bodies.item(i))
 
             # Union of intersection and original body
-            combine_input = combines.createInput(face.body, input_entities)
-            combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
-            final = combines.add(combine_input)
+            if face_type == 'profile':
+                face = sketch.referencePlane
+            try:
+                base_body = face.body
+            except AttributeError:
+                pass # Sketch is not on a body
+            else:
+                combine_input = combines.createInput(base_body, input_entities)
+                combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
+                final = combines.add(combine_input)
 
         except:
             if ui:
